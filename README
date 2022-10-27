@@ -35,6 +35,8 @@ Now simply run dsptunnel. If you don't have OSS run it using an OSS wrapper
 like aoss or padsp. Now ping the other machine. Now set up routing and
 enjoy your new slow Internet. And you can even listen to the bits.
 
+Debian: sudo apt install osspd
+
 If you have a really good sound card that supports 96khz sample rate you can
 start dsptunnel with "-s 96000" to make use of it.
 If you get trasmission errors you can increase the bit length using the -b
