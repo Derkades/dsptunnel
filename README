@@ -18,16 +18,14 @@ differential signaling, if you know what I'm talking about.
 
 Now you need to create the TUNnel devices on both machines.
 As root on both machines:
-# ip tuntap add dev tun0 mode tun user <your user> group <your group>
-# ifconfig tun0 up
+$ sudo ip tuntap add dev tun0 mode tun user $(id -u) group $(id -g)
+$ sudo ip link set dev tun0 up
 
 As root on machine 1:
-# ifconfig tun0 10.0.0.1
-# ifconfig tun0 pointopoint 10.0.0.2
+$ sudo ip addr replace dev tun0 local 172.30.0.1 peer 172.30.0.2
 
 As root on machine 2:
-# ifconfig tun0 10.0.0.2
-# ifconfig tun0 pointopoint 10.0.0.1
+$ sudo ip addr replace dev tun0 local 172.30.0.2 peer 172.30.0.1
 
 Don't forget to put in your user name and group so dsptunnel can access the
 tunnel device without running as root (which would be a bad thing).
