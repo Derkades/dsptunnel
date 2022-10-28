@@ -1,5 +1,5 @@
 BINARY = dsptunnel
-CFLAGS = -Wall -O3
+CFLAGS = -Wall -Wextra -O3
 LDFLAGS = -lpthread
 
 .PHONY: all

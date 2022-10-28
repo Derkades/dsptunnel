@@ -26,163 +26,86 @@
 
 #include "output.h"
 
-#define DATABUFFERSIZE 2048
-static unsigned char databuffer[DATABUFFERSIZE];
+#define SILENCE_LENGTH 4
 
-#define AUDIOBUFFERSIZE 1024*2
-static short int audiobuffer[AUDIOBUFFERSIZE];
-static int bufferpos;
+#define DATA_BUF_SIZE 2048
+static unsigned char dataBuf[DATA_BUF_SIZE];
 
-static int audio_out( int dsp, short int left, short int right )
-{
-	if( bufferpos >= AUDIOBUFFERSIZE )
-	{
-		if( write( dsp, audiobuffer, sizeof( short int ) * AUDIOBUFFERSIZE ) != sizeof( short int ) * AUDIOBUFFERSIZE )
-		{
-			perror( "audio_out: write" );
+#define AUDIO_BUF_SIZE 1024
+static short int audioBuf[AUDIO_BUF_SIZE];
+static int audioBufPos = 0;
+
+static int audio_out(int dsp_fd, short int value) {
+	if (audioBufPos >= AUDIO_BUF_SIZE) {
+		ssize_t written = write(dsp_fd, audioBuf, sizeof(short int) * AUDIO_BUF_SIZE);
+		if (written != (sizeof(short int) * AUDIO_BUF_SIZE)) {
+			perror("audio_out: length mismatch");
 			return 0;
 		}
-		bufferpos = 0;
+		audioBufPos = 0;
 	}
 
-	audiobuffer[bufferpos++] = left;
-	audiobuffer[bufferpos++] = right;
+	audioBuf[audioBufPos++] = value;
 
 	return 1;
 }
 
-void *output_loop( void *inopts )
-{
-	struct threadopts opts = *(struct threadopts *)inopts;
-	
+void *output_loop(void *inopts) {
+	struct threadopts opts = *(struct threadopts *) inopts;
+
 	struct pollfd pollfd;
-
-	int i, j, k;
-
-	unsigned char data;
-	unsigned short int checksum;
-	int size;
-
-	short int lsample, rsample;
-	int state, lastflip, laststate;
-
-	bufferpos = 0;
-
 	pollfd.fd = opts.tundev;
 	pollfd.events = POLLIN;
 
-	state = -1;
-	laststate = -1;
-	lastflip = 0;
-
-	while( ! *(opts.done) )
-	{
-		if( poll( &pollfd, 1, 0 ) )
-		{
-			size = read( opts.tundev, databuffer, DATABUFFERSIZE-2 );
-			if( size == -1 )
-			{
-				perror( "output_loop: read" );
-				return NULL;
+	while (!*(opts.done) ) {
+		if (!poll(&pollfd, 1, 0 )) {
+			// No network data available, write silence
+			for (int i = 0; i < SILENCE_LENGTH*opts.bitlength; i++) {
+				if (!audio_out(opts.dspdev, 0)) {
+					return NULL;
+				}
 			}
+			continue;
+		}
 
-			checksum = fletcher16( databuffer, size );
-			
-			databuffer[size++] = (checksum>>8)&0xff;
-			databuffer[size++] = checksum&0xff;
+		// Read from tun device into data buffer
 
-			fprintf( stderr, "< %i bytes, checksum: 0x%04hX\n", size, checksum );
+		// Last 2 bits are used to store a checksum later
+		ssize_t size = read(opts.tundev, dataBuf, DATA_BUF_SIZE - 2);
+		if (size == -1) {
+			perror("output_loop: read" );
+			return NULL;
+		}
 
-			for( i=0; i<size; i++ )
-			{
-				data = databuffer[i];
+		// Calculate checksum, in 2 bytes at end of buffer
+		unsigned short int checksum = fletcher16(dataBuf, size);
 
-				for( j=0; j<8; j++ )
-				{
-					if( data & 0x01 )
-					{
-						if( laststate&0x01 )
-						{
-							if( laststate&0x02 )
-								state = 0x01;
-							else
-								state = 0x03;
-						}
-						else
-						{
-							if( lastflip )
-								state = 0x01;
-							else
-								state = 0x03;
+		dataBuf[size++] = (checksum>>8)&0xff;
+		dataBuf[size++] = checksum&0xff;
 
-							lastflip = laststate&0x02;
-						}
-					}
-					else
-					{
-						if( laststate&0x01 )
-						{
-							if( lastflip )
-								state = 0x00;
-							else
-								state = 0x02;
+		fprintf(stderr, "< %li bytes, checksum: 0x%04hX\n", size, checksum );
 
-							lastflip = laststate&0x02;
-						}
-						else
-						{
-							if( laststate&0x02 )
-								state = 0x00;
-							else
-								state = 0x02;
-						}
-					}
+		// For all bytes in the output buffer
+		for (int i = 0; i < size; i++) {
+			unsigned char data = dataBuf[i];
 
-					laststate = state;
-
-					data >>= 1;
-				
-					if( state == 0 )
-					{
-						lsample = SHRT_MIN;
-						rsample = SHRT_MIN;
-					}
-					else if( state == 1 )
-					{
-						lsample = SHRT_MIN;
-						rsample = SHRT_MAX;
-					}
-					else if( state == 2 )
-					{
-						lsample = SHRT_MAX;
-						rsample = SHRT_MAX;
-					}
-					else if( state == 3 )
-					{
-						lsample = SHRT_MAX;
-						rsample = SHRT_MIN;
-					}
-
-					for( k=0; k<opts.bitlength; k++ )
-					{
-						if( ! audio_out( opts.dspdev, lsample, rsample ) )
-							return NULL;
+			// For all bits in this byte
+			for (int j = 0; j < 8; j++) {
+				// Output positive sample if bit is 1, negative if bit is 0
+				short int sample = data >> j & 1 ? SHRT_MAX : SHRT_MIN;
+				// Multiple times
+				for (int k = 0; k < opts.bitlength; k++) {
+					if (!audio_out(opts.dspdev, sample)) {
+						return NULL;
 					}
 				}
 			}
-
-			for( i=0; i<16*opts.bitlength; i++ )
-			{
-				if( ! audio_out( opts.dspdev, 0, 0 ) )
-					return NULL;
-			}
 		}
-		else
-		{
-			for( i=0; i<16*opts.bitlength; i++ )
-			{
-				if( ! audio_out( opts.dspdev, 0, 0 ) )
-					return NULL;
+
+		// Write silence so the receiving end can detect EOT
+		for (int i = 0; i < SILENCE_LENGTH*opts.bitlength; i++) {
+			if (!audio_out(opts.dspdev, 0)) {
+				return NULL;
 			}
 		}
 	}

@@ -27,161 +27,79 @@
 
 #define THRESHOLD SHRT_MAX / 4
 
-#define DATABUFFERSIZE 2048
-static unsigned char databuffer[DATABUFFERSIZE];
+#define DATA_BUF_SIZE 2048
+static unsigned char dataBuf[DATA_BUF_SIZE];
+static int dataBufPos = 0;
 
-#define AUDIOBUFFERSIZE 1024*2
-static short int audiobuffer[AUDIOBUFFERSIZE];
-static int bufferpos;
+#define AUDIO_BUF_SIZE 1024
+static short int audioBuf[AUDIO_BUF_SIZE];
+static int audioBufPos = AUDIO_BUF_SIZE;
 
-static int audio_in( int dsp, short int *left, short int *right )
-{
-	if( bufferpos >= AUDIOBUFFERSIZE )
-	{
-		if( read( dsp, audiobuffer, sizeof( short int ) * AUDIOBUFFERSIZE ) != sizeof( short int ) * AUDIOBUFFERSIZE )
-		{
-			perror( "audio_in: read" );
+static int audio_in(int dsp, short int *sample) {
+	if (audioBufPos >= AUDIO_BUF_SIZE) {
+		ssize_t read_bytes = read(dsp, audioBuf, sizeof(short int) * AUDIO_BUF_SIZE);
+		if (read_bytes != sizeof(short int) * AUDIO_BUF_SIZE) {
+			perror("audio_in: read");
 			return 0;
 		}
-		bufferpos = 0;
+		audioBufPos = 0;
 	}
 
-	*left = audiobuffer[bufferpos++];
-	*right = audiobuffer[bufferpos++];
-	
+	*sample = audioBuf[audioBufPos++];
+
 	return 1;
 }
 
-void *input_loop( void *inopts )
-{
-	struct threadopts opts = *(struct threadopts*)inopts;
+void *input_loop(void *inopts) {
+	struct threadopts opts = *(struct threadopts*) inopts;
 
-	unsigned char data;
-	unsigned short int checksum;
-	int size, bits;
-	
-	short int lsample, rsample;
-	int state, laststate, error, silence;
-	
-	bufferpos = AUDIOBUFFERSIZE;
+	while (!*(opts.done)) {
+		int currentByte = 0;
+		int bytePos = 0;
 
-	state = -1;
-	laststate = -1;
-	error = 0;
-	silence = 0;
+		short int sample;
 
-	size = 0;
-	bits = 0;
-	data = 0;
-
-	while( ! *(opts.done) )
-	{
-		if( ! audio_in( opts.dspdev, &lsample, &rsample ) )
+		if (!audio_in(opts.dspdev, &sample)) {
 			return NULL;
-
-		if( lsample < -THRESHOLD )
-		{
-			if( rsample < -THRESHOLD )
-			{
-				state = 0x00;
-			}
-			else if( rsample > THRESHOLD )
-			{
-				state = 0x01;
-			}
-			else
-			{
-				state = -1;
-			}
-		}
-		else if( lsample > THRESHOLD )
-		{
-			if( rsample < -THRESHOLD )
-			{
-				state = 0x03;
-			}
-			else if( rsample > THRESHOLD )
-			{
-				state = 0x02;
-			}
-			else
-			{
-				state = -1;
-			}
-		}
-		else
-		{
-			state = -1;
 		}
 
-		if( state != -1 )
-		{
-			silence = 0;
+		if (sample < -THRESHOLD) { // zero bit
+			bytePos++;
+		} else if (sample > THRESHOLD) { // one bit
+			currentByte |= 1 << bytePos++;
+		} else { // silence
+			// If written at least one byte + checksum
+			if (dataBufPos >= 3) {
+				unsigned short length = dataBufPos - 2;
+				unsigned short expectedChecksum = fletcher16(dataBuf, length);
+				unsigned short receivedChecksum = (dataBuf[length] << 8) | dataBuf[length + 1];
 
-			if( ! error )
-			{
-				if( state != laststate )
-				{
-					data |= (state&0x01)<<bits;
-					bits++;
-				
-					if( bits >= 8 )
-					{
-						databuffer[size++] = data;
-					
-						data = 0;
-						bits = 0;
-						
-						if( size >= DATABUFFERSIZE )
-						{
-							error = 1;
-							fputs( "input_loop: mtu exceeded\n", stderr );
-						}
-					}
-				
-					laststate = state;
+				fprintf(stderr, "> %i bytes, checksum: 0x%04hX (0x%04hX)\n", length, receivedChecksum, expectedChecksum);
+
+				if (expectedChecksum != receivedChecksum) {
+					fputs("input_loop: incorrect checksum\n", stderr);
+				} else if (write(opts.tundev, dataBuf, length) != length) {
+					perror("input_loop: write");
+					return NULL;
 				}
+				dataBufPos = 0;
+				currentByte = 0;
+				bytePos = 0;
 			}
+			continue;
 		}
-		else
-		{
-			silence++;
-			if( silence >= 8*opts.bitlength )
-			{
-				if( ( ! error ) && ( size > 0 ) )
-				{
-					if( ( size > 2 ) && ( bits == 0 ) )
-					{
-						checksum = fletcher16( databuffer, size-2 );
-				
-						fprintf( stderr, "> %i bytes, checksum: 0x%04hX (0x%04hX)\n", size, ((databuffer[size-2]<<8) | databuffer[size-1]), checksum );
-				
-						if( ((databuffer[size-2]<<8) | databuffer[size-1]) == checksum )
-						{
-							if( write( opts.tundev, databuffer, size-2 ) != size-2 )
-							{
-								perror( "input_loop: write" );
-							}
-						}
-						else
-						{
-							fputs( "input_loop: incorrect checksum\n", stderr );
-						}
-					}
-					else
-					{
-						fputs( "input_loop: invalid packet size\n", stderr );
-					}
-				}
 
-				state = -1;
-				laststate = -1;
-				error = 0;
+		if (bytePos >= 8) {
+			dataBuf[dataBufPos++] = currentByte;
+			currentByte = 0;
+			bytePos = 0;
+		}
 
-				size = 0;
-				bits = 0;
-				data = 0;
-			}
+		if (dataBufPos >= DATA_BUF_SIZE - 2) {
+			fputs("received data past buffer size, reset", stderr);
+			dataBufPos = 0;
+			currentByte = 0;
+			bytePos = 0;
 		}
 	}
 

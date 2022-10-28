@@ -20,7 +20,7 @@
 #include <sys/ioctl.h>
 #include <linux/soundcard.h>
 
-int dsp_open( char *dspname, int samplerate )
+int dsp_open( char *dspname, int samplerate)
 {
 	int dev;
 	int arg;
@@ -45,16 +45,15 @@ int dsp_open( char *dspname, int samplerate )
 		return -1;
 	}
 
-	arg = 2;
+	arg = 1;
 	if( ioctl( dev, SNDCTL_DSP_CHANNELS, &arg ) == -1 )
 	{
 		perror( "dsp_open: ioctl: SNDCTL_DSP_CHANNELS" );
 		return -1;
 	}
 
-	if( arg != 2 )
-	{
-		fputs( "dsp_open: Cannot set number of channels\n", stderr );
+	if( arg != 1 ) {
+		fputs("dsp_open: Cannot set number of channels\n", stderr);
 		return -1;
 	}
 
@@ -64,7 +63,7 @@ int dsp_open( char *dspname, int samplerate )
 		perror( "dsp_open: ioctl: SNDCTL_DSP_SPEED" );
 		return -1;
 	}
-	
+
 	if( arg != samplerate )
 	{
 		fputs( "dsp_open: Cannot set sample rate\n", stderr );
