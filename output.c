@@ -99,10 +99,17 @@ void *output_loop(void *inopts) {
 						return NULL;
 					}
 				}
+
+				// Output same length silence so the receiving end knows the next bit is coming
+				for (int k = 0; k < opts.bitlength; k++) {
+					if (!audio_out(opts.dspdev, 0)) {
+						return NULL;
+					}
+				}
 			}
 		}
 
-		// Write silence so the receiving end can detect EOT
+		// Write long silence so the receiving end can detect EOT
 		for (int i = 0; i < SILENCE_LENGTH*opts.bitlength; i++) {
 			if (!audio_out(opts.dspdev, 0)) {
 				return NULL;

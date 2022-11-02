@@ -54,8 +54,9 @@ void *input_loop(void *inopts) {
 	struct threadopts opts = *(struct threadopts*) inopts;
 
 	while (!*(opts.done)) {
-		int currentByte = 0;
-		int bytePos = 0;
+		short int currentByte = 0;
+		short int bitPos = 0;
+		short int silenceCount = 0;
 
 		short int sample;
 
@@ -64,12 +65,28 @@ void *input_loop(void *inopts) {
 		}
 
 		if (sample < -THRESHOLD) { // zero bit
-			bytePos++;
+			// Byte is already initialized as all zeroes
+			// Don't need to change anything for a bit to be zero
 		} else if (sample > THRESHOLD) { // one bit
-			currentByte |= 1 << bytePos++;
+			currentByte |= 1 << bitPos;
 		} else { // silence
+			silenceCount++;
+
+			// Short silence means next bit is coming
+			// There may me multiple silent samples, but bit position should only be moved once
+			if (silenceCount == 1) {
+				bitPos++;
+				if (bitPos >= 8) {
+					dataBuf[dataBufPos++] = currentByte;
+					currentByte = 0;
+					bitPos = 0;
+				}
+				continue;
+			}
+
+			// Long silence => EOT
 			// If written at least one byte + checksum
-			if (dataBufPos >= 3) {
+			if (silenceCount > 2*opts.bitlength && dataBufPos >= 3) {
 				unsigned short length = dataBufPos - 2;
 				unsigned short expectedChecksum = fletcher16(dataBuf, length);
 				unsigned short receivedChecksum = (dataBuf[length] << 8) | dataBuf[length + 1];
@@ -84,22 +101,19 @@ void *input_loop(void *inopts) {
 				}
 				dataBufPos = 0;
 				currentByte = 0;
-				bytePos = 0;
+				bitPos = 0;
 			}
+
 			continue;
 		}
 
-		if (bytePos >= 8) {
-			dataBuf[dataBufPos++] = currentByte;
-			currentByte = 0;
-			bytePos = 0;
-		}
+		silenceCount = 0;
 
 		if (dataBufPos >= DATA_BUF_SIZE - 2) {
 			fputs("received data past buffer size, reset", stderr);
 			dataBufPos = 0;
 			currentByte = 0;
-			bytePos = 0;
+			bitPos = 0;
 		}
 	}
 
