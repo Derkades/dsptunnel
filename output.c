@@ -29,7 +29,7 @@
 // #define DEBUG
 
 #define EOB_SILENCE 2
-#define EOT_SILENCE 8
+#define EOT_SILENCE 4
 
 #define DATA_BUF_SIZE 2048
 static unsigned char dataBuf[DATA_BUF_SIZE];
@@ -128,13 +128,6 @@ void *output_loop(void *inopts) {
 				return NULL;
 			}
 		}
-
-		for (int i = 0; i < 2048*opts.bitlength; i++) {
-			if (!audio_out(opts.dspdev, 0)) {
-				return NULL;
-			}
-		}
-		break;
 	}
 
 	return NULL;

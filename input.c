@@ -26,7 +26,7 @@
 #include "input.h"
 
 #define EOB_SILENCE 1
-#define EOT_SILENCE 5
+#define EOT_SILENCE 3
 #define THRESHOLD SHRT_MAX / 6
 
 #define DATA_BUF_SIZE 2048
