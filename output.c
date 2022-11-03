@@ -26,7 +26,10 @@
 
 #include "output.h"
 
-#define SILENCE_LENGTH 4
+// #define DEBUG
+
+#define EOB_SILENCE 2
+#define EOT_SILENCE 8
 
 #define DATA_BUF_SIZE 2048
 static unsigned char dataBuf[DATA_BUF_SIZE];
@@ -60,7 +63,7 @@ void *output_loop(void *inopts) {
 	while (!*(opts.done) ) {
 		if (!poll(&pollfd, 1, 0 )) {
 			// No network data available, write silence
-			for (int i = 0; i < SILENCE_LENGTH*opts.bitlength; i++) {
+			for (int i = 0; i < EOT_SILENCE*opts.bitlength; i++) {
 				if (!audio_out(opts.dspdev, 0)) {
 					return NULL;
 				}
@@ -89,19 +92,29 @@ void *output_loop(void *inopts) {
 		for (int i = 0; i < size; i++) {
 			unsigned char data = dataBuf[i];
 
+			#ifdef DEBUG
+			fprintf(stderr, "<%i", data);
+			#endif
+
 			// For all bits in this byte
-			for (int j = 0; j < 8; j++) {
+			for (int j = 7; j >= 0; j--) {
 				// Output positive sample if bit is 1, negative if bit is 0
 				short int sample = data >> j & 1 ? SHRT_MAX : SHRT_MIN;
 				// Multiple times
 				for (int k = 0; k < opts.bitlength; k++) {
+					#ifdef DEBUG
+					fprintf(stderr, "<%i", data >> j & 1);
+					#endif
 					if (!audio_out(opts.dspdev, sample)) {
 						return NULL;
 					}
 				}
 
 				// Output same length silence so the receiving end knows the next bit is coming
-				for (int k = 0; k < opts.bitlength; k++) {
+				for (int k = 0; k < EOB_SILENCE*opts.bitlength; k++) {
+					#ifdef DEBUG
+					fprintf(stderr, "<-");
+					#endif
 					if (!audio_out(opts.dspdev, 0)) {
 						return NULL;
 					}
@@ -110,11 +123,18 @@ void *output_loop(void *inopts) {
 		}
 
 		// Write long silence so the receiving end can detect EOT
-		for (int i = 0; i < SILENCE_LENGTH*opts.bitlength; i++) {
+		for (int i = 0; i < EOT_SILENCE*opts.bitlength; i++) {
 			if (!audio_out(opts.dspdev, 0)) {
 				return NULL;
 			}
 		}
+
+		for (int i = 0; i < 2048*opts.bitlength; i++) {
+			if (!audio_out(opts.dspdev, 0)) {
+				return NULL;
+			}
+		}
+		break;
 	}
 
 	return NULL;

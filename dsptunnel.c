@@ -75,7 +75,7 @@ int main( int argc, char *argv[] )
 			case 't':
 				tunname = strdup( optarg );
 			break;
-			
+
 			case 'd':
 				dspname = strdup( optarg );
 			break;
@@ -93,12 +93,12 @@ int main( int argc, char *argv[] )
 				fputs( "dsptunnel: main: Can not parse command line\n", stderr );
 				return EXIT_FAILURE;
 			break;
-		}	
+		}
 	}
-	
+
 	if( ! tunname )
 		tunname = strdup( "tun0" );
-	
+
 	if( ! dspname )
 		dspname = strdup( "/dev/dsp" );
 
@@ -117,7 +117,7 @@ int main( int argc, char *argv[] )
 	tundev = tun_open( tunname );
 	if( tundev < 0 )
 		return EXIT_FAILURE;
-	
+
 	dspdev = dsp_open( dspname, samplerate );
 	if( dspdev < 0 )
 		return EXIT_FAILURE;
@@ -160,7 +160,7 @@ int main( int argc, char *argv[] )
 
 	free( tunname );
 	free( dspname );
-	
+
 	return EXIT_SUCCESS;
 }
 

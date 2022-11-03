@@ -25,7 +25,9 @@
 
 #include "input.h"
 
-#define THRESHOLD SHRT_MAX / 4
+#define EOB_SILENCE 1
+#define EOT_SILENCE 5
+#define THRESHOLD SHRT_MAX / 6
 
 #define DATA_BUF_SIZE 2048
 static unsigned char dataBuf[DATA_BUF_SIZE];
@@ -53,67 +55,103 @@ static int audio_in(int dsp, short int *sample) {
 void *input_loop(void *inopts) {
 	struct threadopts opts = *(struct threadopts*) inopts;
 
-	while (!*(opts.done)) {
-		short int currentByte = 0;
-		short int bitPos = 0;
-		short int silenceCount = 0;
+	short int currentByte = 0;
+	short int bitPos = 7;
+	short int silenceCount = 0;
+	long int samplesTotal = 0;
+	short int samplesCount = 0;
+	short int eot = 1;
 
+	while (!*(opts.done)) {
 		short int sample;
 
 		if (!audio_in(opts.dspdev, &sample)) {
 			return NULL;
 		}
 
-		if (sample < -THRESHOLD) { // zero bit
-			// Byte is already initialized as all zeroes
-			// Don't need to change anything for a bit to be zero
-		} else if (sample > THRESHOLD) { // one bit
-			currentByte |= 1 << bitPos;
-		} else { // silence
+		// currentlyReceivingAvg = (currentlyReceivingAvg + sample) / 2;
+
+		if (sample > -THRESHOLD && sample < THRESHOLD) {
+			// fprintf(stderr, "-");
 			silenceCount++;
-
-			// Short silence means next bit is coming
-			// There may me multiple silent samples, but bit position should only be moved once
-			if (silenceCount == 1) {
-				bitPos++;
-				if (bitPos >= 8) {
-					dataBuf[dataBufPos++] = currentByte;
-					currentByte = 0;
-					bitPos = 0;
-				}
-				continue;
+			// Prevent overflow
+			if (silenceCount == SHRT_MAX) {
+				silenceCount--;
 			}
+		} else {
+			// fprintf(stderr, "+%i", silenceCount);
+			// fprintf(stderr, "%i", sample > THRESHOLD ? 1 : 0);
+			samplesTotal += sample;
+			samplesCount += 1;
+			if (eot) {
+				eot = 0;
+				silenceCount = 0;
+				// fprintf(stderr, "START\n");
+			} else if (silenceCount > 0) {
+				silenceCount--;
+			}
+			// silenceCount /= 2;
+		}
 
-			// Long silence => EOT
-			// If written at least one byte + checksum
-			if (silenceCount > 2*opts.bitlength && dataBufPos >= 3) {
-				unsigned short length = dataBufPos - 2;
-				unsigned short expectedChecksum = fletcher16(dataBuf, length);
-				unsigned short receivedChecksum = (dataBuf[length] << 8) | dataBuf[length + 1];
+		// Short silence means next bit is coming
+		// There may me multiple silent samples, but bit position should only be moved once
+		if (silenceCount >= (opts.bitlength * 0.75) && samplesCount >= opts.bitlength * EOB_SILENCE) {
+			silenceCount = 0;
+			float sampleAvg = (float) samplesTotal / (float) samplesCount;
+			// fprintf(stderr, ">%.1f", sampleAvg);
+			if (sampleAvg > THRESHOLD) {
+				currentByte |= 1 << bitPos;
+				// fprintf(stderr, "-1<\n");
+			} else if (sampleAvg < -THRESHOLD) {
+				// fprintf(stderr, "-0<\n");
+			} else {
+				// fprintf(stderr, "-?<\n");
+			}
+			samplesTotal = 0;
+			samplesCount = 0;
 
-				fprintf(stderr, "> %i bytes, checksum: 0x%04hX (0x%04hX)\n", length, receivedChecksum, expectedChecksum);
-
-				if (expectedChecksum != receivedChecksum) {
-					fputs("input_loop: incorrect checksum\n", stderr);
-				} else if (write(opts.tundev, dataBuf, length) != length) {
-					perror("input_loop: write");
-					return NULL;
-				}
-				dataBufPos = 0;
+			bitPos--;
+			if (bitPos < 0) {
+				dataBuf[dataBufPos++] = currentByte;
 				currentByte = 0;
-				bitPos = 0;
+				bitPos = 7;
+				// fprintf(stderr, ">#%i\n", dataBuf[dataBufPos-1]);
 			}
-
 			continue;
 		}
 
-		silenceCount = 0;
+		// Long silence => EOT
+		// If written at least one byte + checksum
+		if (silenceCount > (opts.bitlength * EOT_SILENCE)) {
+			silenceCount = 0;
+			if (dataBufPos < 3) {
+				continue;
+			}
+			unsigned short length = dataBufPos - 2;
+			unsigned short expectedChecksum = fletcher16(dataBuf, length);
+			unsigned short receivedChecksum = (dataBuf[length] << 8) | dataBuf[length + 1];
 
-		if (dataBufPos >= DATA_BUF_SIZE - 2) {
-			fputs("received data past buffer size, reset", stderr);
+			fprintf(stderr, "> %i bytes, checksum: 0x%04hX (0x%04hX)\n", length, receivedChecksum, expectedChecksum);
+
+			if (expectedChecksum != receivedChecksum) {
+				fputs("input_loop: incorrect checksum\n", stderr);
+			} else if (write(opts.tundev, dataBuf, length) != length) {
+				perror("input_loop: write");
+				return NULL;
+			}
+
 			dataBufPos = 0;
 			currentByte = 0;
-			bitPos = 0;
+			bitPos = 7;
+			samplesTotal = 0;
+			samplesCount = 0;
+			eot = 1;
+		}
+
+		if (dataBufPos >= DATA_BUF_SIZE - 2) {
+			// fputs("received data past buffer size, reset", stderr);
+			perror("prevent buffer overflow");
+			return NULL;
 		}
 	}
 
