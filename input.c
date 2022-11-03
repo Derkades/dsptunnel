@@ -25,15 +25,15 @@
 
 #include "input.h"
 
-#define EOB_SILENCE 1
-#define EOT_SILENCE 3
-#define THRESHOLD SHRT_MAX / 6
+#define EOB_SILENCE 20
+#define EOT_SILENCE 50
+#define THRESHOLD 1000
 
 #define DATA_BUF_SIZE 2048
 static unsigned char dataBuf[DATA_BUF_SIZE];
 static int dataBufPos = 0;
 
-#define AUDIO_BUF_SIZE 1024
+#define AUDIO_BUF_SIZE 2048
 static short int audioBuf[AUDIO_BUF_SIZE];
 static int audioBufPos = AUDIO_BUF_SIZE;
 
@@ -60,7 +60,7 @@ void *input_loop(void *inopts) {
 	short int silenceCount = 0;
 	long int samplesTotal = 0;
 	short int samplesCount = 0;
-	short int eot = 1;
+	// short int eot = 1;
 
 	while (!*(opts.done)) {
 		short int sample;
@@ -69,10 +69,10 @@ void *input_loop(void *inopts) {
 			return NULL;
 		}
 
-		// currentlyReceivingAvg = (currentlyReceivingAvg + sample) / 2;
-
 		if (sample > -THRESHOLD && sample < THRESHOLD) {
-			// fprintf(stderr, "-");
+			if (silenceCount < 32) {
+				fprintf(stderr, "-");
+			}
 			silenceCount++;
 			// Prevent overflow
 			if (silenceCount == SHRT_MAX) {
@@ -80,32 +80,30 @@ void *input_loop(void *inopts) {
 			}
 		} else {
 			// fprintf(stderr, "+%i", silenceCount);
-			// fprintf(stderr, "%i", sample > THRESHOLD ? 1 : 0);
 			samplesTotal += sample;
 			samplesCount += 1;
-			if (eot) {
-				eot = 0;
+			if (silenceCount > EOB_SILENCE) {
 				silenceCount = 0;
-				// fprintf(stderr, "START\n");
+				fprintf(stderr, "S");
 			} else if (silenceCount > 0) {
 				silenceCount--;
 			}
-			// silenceCount /= 2;
+			fprintf(stderr, "%i", sample > THRESHOLD ? 1 : 0);
 		}
 
 		// Short silence means next bit is coming
 		// There may me multiple silent samples, but bit position should only be moved once
-		if (silenceCount >= (opts.bitlength * 0.75) && samplesCount >= opts.bitlength * EOB_SILENCE) {
+		if (silenceCount >= (opts.bitlength * EOB_SILENCE) && samplesCount >= opts.bitlength * 0.75) {
 			silenceCount = 0;
 			float sampleAvg = (float) samplesTotal / (float) samplesCount;
-			// fprintf(stderr, ">%.1f", sampleAvg);
+			fprintf(stderr, ">%.1f", sampleAvg);
 			if (sampleAvg > THRESHOLD) {
 				currentByte |= 1 << bitPos;
-				// fprintf(stderr, "-1<\n");
+				fprintf(stderr, "-1<\n");
 			} else if (sampleAvg < -THRESHOLD) {
-				// fprintf(stderr, "-0<\n");
+				fprintf(stderr, "-0<\n");
 			} else {
-				// fprintf(stderr, "-?<\n");
+				fprintf(stderr, "-?<\n");
 			}
 			samplesTotal = 0;
 			samplesCount = 0;
@@ -115,18 +113,14 @@ void *input_loop(void *inopts) {
 				dataBuf[dataBufPos++] = currentByte;
 				currentByte = 0;
 				bitPos = 7;
-				// fprintf(stderr, ">#%i\n", dataBuf[dataBufPos-1]);
+				fprintf(stderr, ">#%i\n", dataBuf[dataBufPos-1]);
 			}
 			continue;
 		}
 
 		// Long silence => EOT
 		// If written at least one byte + checksum
-		if (silenceCount > (opts.bitlength * EOT_SILENCE)) {
-			silenceCount = 0;
-			if (dataBufPos < 3) {
-				continue;
-			}
+		if (silenceCount > (opts.bitlength * EOT_SILENCE) && dataBufPos >= 3) {
 			unsigned short length = dataBufPos - 2;
 			unsigned short expectedChecksum = fletcher16(dataBuf, length);
 			unsigned short receivedChecksum = (dataBuf[length] << 8) | dataBuf[length + 1];
@@ -145,7 +139,7 @@ void *input_loop(void *inopts) {
 			bitPos = 7;
 			samplesTotal = 0;
 			samplesCount = 0;
-			eot = 1;
+			// eot = 1;
 		}
 
 		if (dataBufPos >= DATA_BUF_SIZE - 2) {

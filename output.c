@@ -28,13 +28,13 @@
 
 // #define DEBUG
 
-#define EOB_SILENCE 2
-#define EOT_SILENCE 4
+#define EOB_SILENCE 40
+#define EOT_SILENCE 80
 
 #define DATA_BUF_SIZE 2048
 static unsigned char dataBuf[DATA_BUF_SIZE];
 
-#define AUDIO_BUF_SIZE 1024
+#define AUDIO_BUF_SIZE 2048
 static short int audioBuf[AUDIO_BUF_SIZE];
 static int audioBufPos = 0;
 
