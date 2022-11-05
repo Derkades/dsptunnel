@@ -30,6 +30,10 @@
 #include "input.h"
 #include "output.h"
 
+// Can be disabled for debugging purposes
+#define ENABLE_INPUT
+#define ENABLE_OUTPUT
+
 volatile int done;
 
 void sig_exit( int sig )
@@ -131,35 +135,39 @@ int main( int argc, char *argv[] )
 	opts.bitlength = bitlength;
 	opts.done = &done;
 
-	if( pthread_create( &inthread, NULL, input_loop, &opts ) != 0 )
-	{
+	#ifdef ENABLE_INPUT
+	if (pthread_create(&inthread, NULL, input_loop, &opts ) != 0) {
 		perror( "dsptunnel: main: pthread_create: input_loop" );
 		return EXIT_FAILURE;
 	}
+	#endif
 
-	if( pthread_create( &outthread, NULL, output_loop, &opts ) != 0 )
-	{
+	#ifdef ENABLE_OUTPUT
+	if (pthread_create(&outthread, NULL, output_loop, &opts) != 0) {
 		perror( "dsptunnel: main: pthread_create: output_loop" );
 		return EXIT_FAILURE;
 	}
+	#endif
 
-	if( pthread_join( inthread, NULL ) != 0 )
-	{
+	#ifdef ENABLE_INPUT
+	if (pthread_join(inthread, NULL) != 0) {
 		perror( "dsptunnel: main: pthread_join: inthread" );
 		return EXIT_FAILURE;
 	}
+	#endif
 
-	if( pthread_join( outthread, NULL ) != 0 )
-	{
+	#ifdef ENABLE_OUTPUT
+	if (pthread_join(outthread, NULL) != 0) {
 		perror( "dsptunnel: main: pthread_join: outthread" );
 		return EXIT_FAILURE;
 	}
+	#endif
 
-	close( tundev );
-	close( dspdev );
+	close(tundev);
+	close(dspdev);
 
-	free( tunname );
-	free( dspname );
+	free(tunname);
+	free(dspname);
 
 	return EXIT_SUCCESS;
 }
