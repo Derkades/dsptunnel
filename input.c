@@ -29,7 +29,7 @@
 // #define DEBUG_VERBOSE
 
 #define EOT_SILENCE 5
-#define THRESHOLD 2000
+#define THRESHOLD 1500
 #define CONSIDER_FIRST_SAMPLE
 
 #define DATA_BUF_SIZE 2048
@@ -49,6 +49,9 @@ signed int previousCumSum = 0;
 signed int sampleCumSum = 0;
 signed char bitPos = 7;
 unsigned char currentByte = 0;
+
+double levelSum = 0;
+short unsigned int levelCount = 0;
 
 static int audio_in() {
 	if (audioBufPos >= AUDIO_BUF_SIZE) {
@@ -88,8 +91,10 @@ void save_bit() {
 	} else {
 		fprintf(stderr, " ????\n");
 	}
-	#elif DEBUG
-	fprintf(stderr, " ");
+	#else
+		#ifdef DEBUG
+		fprintf(stderr, " ");
+		#endif
 	#endif
 }
 
@@ -111,14 +116,17 @@ short int receive_silence() {
 			unsigned short length = dataBufPos - 2;
 			unsigned short expectedChecksum = fletcher16(dataBuf, length);
 			unsigned short receivedChecksum = (dataBuf[length] << 8) | dataBuf[length + 1];
+			float levelMean = levelSum / levelCount;
+			levelSum = 0;
+			levelCount = 0;
 
 			if (expectedChecksum != receivedChecksum) {
-				fprintf(stderr, "> %i bytes, incorrect checksum 0x%04hX / 0x%04hX\n", dataBufPos, receivedChecksum, expectedChecksum);
+				fprintf(stderr, "> %i bytes, incorrect checksum 0x%04hX / 0x%04hX level %.0f\n", dataBufPos, receivedChecksum, expectedChecksum, levelMean);
 			} else if (write(opts.tundev, dataBuf, length) != length) {
 				perror("input_loop: write");
 				return 0;
 			} else {
-				fprintf(stderr, "> %i bytes, correct checksum 0x%04hX\n", dataBufPos, receivedChecksum);
+				fprintf(stderr, "> %i bytes, correct checksum 0x%04hX level %.0f\n", dataBufPos, receivedChecksum, levelMean);
 			}
 		}
 		dataBufPos = 0;
@@ -128,6 +136,9 @@ short int receive_silence() {
 }
 
 void receive_bit() {
+	levelSum += abs(sample);
+	levelCount++;
+
 	if (silenceCount > opts.bitlength) {
 		// Was silent for a while, this is the start of a new transmission
 		// First sample is ignored
@@ -157,6 +168,7 @@ void receive_bit() {
 		fprintf(stderr, "%i", sample > THRESHOLD ? 1 : 0);
 		#endif
 		if (secondPartSamples > 0) {
+			sampleCumSum += sample;
 			secondPartSamples++;
 			// In second part. Count number of samples before finalizing bit and moving to the next
 			if (secondPartSamples >= opts.bitlength) {
