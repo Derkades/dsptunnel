@@ -25,7 +25,7 @@
 
 #include "input.h"
 
-#define DEBUG
+// #define DEBUG
 // #define DEBUG_VERBOSE
 
 #define EOT_SILENCE 5
@@ -43,8 +43,9 @@ static int audioBufPos = AUDIO_BUF_SIZE;
 struct threadopts opts;
 
 short signed int sample = 0;
-short unsigned int sampleCount = 0;
 short unsigned int silenceCount = 0;
+char secondPartSamples = 0;
+signed int previousCumSum = 0;
 signed int sampleCumSum = 0;
 signed char bitPos = 7;
 unsigned char currentByte = 0;
@@ -74,22 +75,22 @@ void save_byte() {
 }
 
 void save_bit() {
-	int sampleMean = sampleCumSum / opts.bitlength;
-	if (sampleMean > THRESHOLD) {
+	// NEG-POS signal means 1 bit
+	if (previousCumSum < 0 && sampleCumSum > 0) {
 		currentByte |= 1 << bitPos;
 	}
+
 	#ifdef DEBUG_VERBOSE
-	fprintf(stderr, " #%i", sampleCount);
-	if (sampleMean > 0) {
-		fprintf(stderr, " ~%i > 1\n", sampleMean);
+	if (previousCumSum < 0 && sampleCumSum > 0) {
+		fprintf(stderr, " NP-1\n");
+	} else if (previousCumSum > 0 && sampleCumSum < 0) {
+		fprintf(stderr, " PN-0\n");
 	} else {
-		fprintf(stderr, " ~%i > 0\n", sampleMean);
+		fprintf(stderr, " ????\n");
 	}
-	#else
+	#elif DEBUG
 	fprintf(stderr, " ");
 	#endif
-	sampleCumSum = 0;
-	sampleCount = 0;
 }
 
 short int receive_silence() {
@@ -99,24 +100,26 @@ short int receive_silence() {
 		silenceCount--;
 	}
 
-	if (silenceCount > (opts.bitlength * EOT_SILENCE) && dataBufPos >= 3) {
-		if (bitPos == 0) {
-			// Last bit of final byte was missing
-			save_bit();
-			save_byte();
-		}
+	if (silenceCount > (opts.bitlength * EOT_SILENCE)) {
+		if (dataBufPos > 3) {
+			if (bitPos == 0) {
+				// Last bit of final byte was missing
+				save_bit();
+				save_byte();
+			}
 
-		unsigned short length = dataBufPos - 2;
-		unsigned short expectedChecksum = fletcher16(dataBuf, length);
-		unsigned short receivedChecksum = (dataBuf[length] << 8) | dataBuf[length + 1];
+			unsigned short length = dataBufPos - 2;
+			unsigned short expectedChecksum = fletcher16(dataBuf, length);
+			unsigned short receivedChecksum = (dataBuf[length] << 8) | dataBuf[length + 1];
 
-		if (expectedChecksum != receivedChecksum) {
-			fprintf(stderr, "> %i bytes, incorrect checksum 0x%04hX / 0x%04hX", dataBufPos, receivedChecksum, expectedChecksum);
-		} else if (write(opts.tundev, dataBuf, length) != length) {
-			perror("input_loop: write");
-			return 0;
-		} else {
-			fprintf(stderr, "> %i bytes, correct checksum 0x%04hX", dataBufPos, receivedChecksum);
+			if (expectedChecksum != receivedChecksum) {
+				fprintf(stderr, "> %i bytes, incorrect checksum 0x%04hX / 0x%04hX\n", dataBufPos, receivedChecksum, expectedChecksum);
+			} else if (write(opts.tundev, dataBuf, length) != length) {
+				perror("input_loop: write");
+				return 0;
+			} else {
+				fprintf(stderr, "> %i bytes, correct checksum 0x%04hX\n", dataBufPos, receivedChecksum);
+			}
 		}
 		dataBufPos = 0;
 	}
@@ -139,7 +142,6 @@ void receive_bit() {
 			#ifdef DEBUG
 			fprintf(stderr, "%i", sample > THRESHOLD ? 1 : 0);
 			#endif
-			sampleCount = 1;
 			sampleCumSum = sample;
 		#else
 			sampleCount = 0;
@@ -148,24 +150,39 @@ void receive_bit() {
 
 		if (dataBufPos > 0) {
 			dataBufPos = 0;
-			fprintf(stderr, "reset buffer, previous not correctly received\n");
+			fprintf(stderr, "reset previous failed transmission\n");
 		}
 	} else {
 		#ifdef DEBUG
 		fprintf(stderr, "%i", sample > THRESHOLD ? 1 : 0);
 		#endif
-		sampleCumSum += sample;
+		if (secondPartSamples > 0) {
+			secondPartSamples++;
+			// In second part. Count number of samples before finalizing bit and moving to the next
+			if (secondPartSamples >= opts.bitlength) {
+				save_bit();
+				if (bitPos > 0) {
+					bitPos--;
+				} else {
+					save_byte();
+				}
+				// Transition to first part state
+				secondPartSamples = 0;
+				sampleCumSum = 0;
+			}
+		} else {
+			// In first part. Detect second part by polarity switch
+			if ((sample > 0 && sampleCumSum < 0) || (sample < 0 && sampleCumSum > 0)) {
+				secondPartSamples = 1; // Transition to second part state
+				previousCumSum = sampleCumSum;
+				sampleCumSum = sample;
+			} else {
+				sampleCumSum += sample;
+			}
+		}
+
 		if (silenceCount > 0) {
 			silenceCount--;
-		}
-		sampleCount++;
-		if (sampleCount >= opts.bitlength) {
-			save_bit();
-			if (bitPos > 0) {
-				bitPos--;
-			} else {
-				save_byte();
-			}
 		}
 	}
 }

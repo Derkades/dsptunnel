@@ -55,6 +55,7 @@ int main( int argc, char *argv[] )
 	char *tunname = NULL;
 	char *dspname = NULL;
 	int samplerate = 48000;
+	// int samplerate = 44100;
 	int bitlength = 2;
 
 	opterr = 0;
@@ -64,15 +65,15 @@ int main( int argc, char *argv[] )
 		switch( opt )
 		{
 			case 'h':
-				puts( "dsptunnel v.1.0 by 50m30n3 2011" );
-				puts( "" );
-				puts( "USAGE: dsptunnel [-h] [-t tunif] [-d dspdev] [-s samplerate] [-b bitlength]" );
-				puts( "" );
-				puts( "\t-h\t\tShow help" );
-				puts( "\t-t tunif\tSet name of tunnel interface (tun0)" );
-				puts( "\t-d dspdev\tSet name of dsp device (/dev/dsp)" );
-				puts( "\t-s sampelerate\tSet the sample rate (48000)" );
-				puts( "\t-b bitlength\tSet the length of one bit, in samples (2)" );
+				puts("dsptunnel v.1.0 by 50m30n3 2011" );
+				puts("" );
+				puts("USAGE: dsptunnel [-h] [-t tunif] [-d dspdev] [-s samplerate] [-b bitlength]" );
+				puts("" );
+				puts("\t-h\t\tShow help");
+				puts("\t-t tunif\tSet name of tunnel interface (tun0)");
+				puts("\t-d dspdev\tSet name of dsp device (/dev/dsp)");
+				printf("\t-s sampelerate\tSet the sample rate (%i)", samplerate);
+				printf("\t-b bitlength\tSet the length of one bit, in samples (%i)", bitlength);
 				return EXIT_SUCCESS;
 			break;
 

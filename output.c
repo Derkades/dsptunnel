@@ -28,12 +28,10 @@
 #include "output.h"
 
 // #define DEBUG_PRINT
-// #define DEBUG_HELLO "hello this is an even longer message lorem ipsum"
-// #define DEBUG_HELLO "hello abcdefghijklmnopqrstuvwxyz"
+#define DEBUG_HELLO "hello this is an even longer message lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem ipsum"
 // #define DEBUG_HELLO "abcdefghijklmnopqrstuvwxyz"
-#define DEBUG_HELLO "hello"
+// #define DEBUG_HELLO "hello"
 
-// #define SILENCE_SAMPLE SHRT_MAX / 16
 #define EOT_SILENCE 8
 
 #define DATA_BUF_SIZE 2048
@@ -42,8 +40,6 @@ static unsigned char dataBuf[DATA_BUF_SIZE];
 #define AUDIO_BUF_SIZE 4096
 static short int audioBuf[AUDIO_BUF_SIZE];
 static int audioBufPos = 0;
-
-// static short silence = SILENCE_SAMPLE;
 
 static short int write_sample(struct threadopts opts, short int sample) {
 	#ifdef DEBUG_PRINT
@@ -75,10 +71,6 @@ static short int write_sample_bl(struct threadopts opts, short int sample) {
 	fputs(" ", stderr);
 	#endif
 	for (int k = 0; k < opts.bitlength; k++) {
-		// if (sample == 0) {
-		// 	sample = silence;
-		// 	silence = -silence;
-		// }
 		if (!write_sample(opts, sample)) {
 			return 0;
 		}
@@ -97,18 +89,15 @@ static short int write_sample_bl_repeat(struct threadopts opts, short int bit, s
 
 static short int write_byte(struct threadopts opts, unsigned char byte) {
 	for (int j = 7; j >= 0; j--) {
-		// Output positive sample if bit is 1, negative sample if bit is 0
-		short int sample = (byte >> j) & 1 ? SHRT_MAX : SHRT_MIN;
-		if (!write_sample_bl(opts, sample)) {
+		// Output POS-NEG if bit is 0, output NEG-POS if bit is 1
+		unsigned char bit = (byte >> j) & 1;
+		if (!write_sample_bl(opts, bit ? SHRT_MIN : SHRT_MAX)) {
+			return 0;
+		}
+		if (!write_sample_bl(opts, bit ? SHRT_MAX : SHRT_MIN)) {
 			return 0;
 		}
 	}
-	// End every byte with silence to sync
-	// if (!write_sample_bl_repeat(opts, 0, 2)) {
-	// 	return 0;
-	// }
-	// write_sample_bl(opts, SHRT_MIN);
-	// write_sample_bl(opts, SHRT_MAX);
 	return 1;
 }
 
@@ -131,7 +120,7 @@ void *output_loop(void *inopts) {
 		if (!poll(&pollfd, 1, 0 )) {
 			// No network data available, write silence
 			for (int i = 0; i < EOT_SILENCE*opts.bitlength; i++) {
-				if (!audio_out(opts.dspdev, 0)) {
+				if (!write_sample_bl_repeat(opts, 0, EOT_SILENCE)) {
 					return NULL;
 				}
 			}
@@ -155,11 +144,6 @@ void *output_loop(void *inopts) {
 		dataBuf[size++] = checksum&0xff;
 
 		fprintf(stderr, "< %li bytes, checksum: 0x%04hX\n", size, checksum);
-
-		// if (!write_start_magic(opts)) {
-		// 	perror("magic");
-		// 	return NULL;
-		// }
 
 		// For all bytes in the output buffer
 		for (int i = 0; i < size; i++) {
