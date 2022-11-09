@@ -28,9 +28,8 @@
 #include "output.h"
 
 // #define DEBUG_PRINT
-#define DEBUG_HELLO "hello this is an even longer message lorem ipsum lorem ipsum lorem ipsum lorem ipsum lorem ipsum"
-// #define DEBUG_HELLO "abcdefghijklmnopqrstuvwxyz"
-// #define DEBUG_HELLO "hello"
+#define DEBUG_BYTES 512
+#define DEBUG_SLEEP 1
 
 #define EOT_SILENCE 8
 
@@ -109,12 +108,15 @@ void *output_loop(void *inopts) {
 	pollfd.events = POLLIN;
 
 	while (!*(opts.done) ) {
-		#ifdef DEBUG_HELLO
-		sleep(3);
-		const char *test_str = DEBUG_HELLO;
-		ssize_t size = (ssize_t) strlen(test_str);
-		for (int i = 0; i < size; i++) {
-			dataBuf[i] = test_str[i];
+		#ifdef DEBUG_BYTES
+		sleep(DEBUG_SLEEP);
+		ssize_t size = DEBUG_BYTES;
+		dataBuf[0] = 'a';
+		for (int i = 1; i < DEBUG_BYTES; i++) {
+			dataBuf[i] = dataBuf[i - 1] + 1;
+			if (dataBuf[i] > 'z') {
+				dataBuf[i] = 'a';
+			}
 		}
 		#else
 		if (!poll(&pollfd, 1, 0 )) {
@@ -163,7 +165,7 @@ void *output_loop(void *inopts) {
 			return NULL;
 		}
 
-		#ifdef DEBUG_HELLO
+		#ifdef DEBUG_BYTES
 		// Flush audio buffer
 		while (audioBufPos != 1) {
 			write_sample(opts, 0);
