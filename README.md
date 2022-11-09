@@ -1,6 +1,10 @@
-Original dsptunnel by 50m30n3 2011
+# dsptunnel
 
-Forked version to use mono audio instead of stereo. This fork also better tolerates unstable connections.
+Original dsptunnel by 50m30n3 (c) 2011
+
+Forked version by Derkades (c) 2022 to use mono audio instead of stereo. This fork also better tolerates unstable connections.
+
+## Introduction
 
 Ever wanted to relive the carefree days of slow-as-fuck Internet?
 Miss the days of aborted downloads and half loaded porn images?
@@ -18,32 +22,42 @@ Unity gain is best, so both playback and recording should be set to 0db.
 Also, you'll need a stereo link, otherwise it won't work since this baby uses
 differential signaling, if you know what I'm talking about.
 
+## Usage
+
 Now you need to create the TUNnel devices on both machines.
 As root on both machines:
-$ sudo ip tuntap add dev tun0 mode tun user $(id -u) group $(id -g)
-$ sudo ip link set dev tun0 up
+```
+sudo ip tuntap add dev tun0 mode tun user $(id -u) group $(id -g)
+sudo ip link set dev tun0 up
+```
 
-As root on machine 1:
-$ sudo ip addr replace dev tun0 local 172.30.0.1 peer 172.30.0.2
+On machine 1:
+```
+sudo ip addr replace dev tun0 local 172.30.0.1 peer 172.30.0.2
+```
 
-As root on machine 2:
-$ sudo ip addr replace dev tun0 local 172.30.0.2 peer 172.30.0.1
+On machine 2:
+```
+sudo ip addr replace dev tun0 local 172.30.0.2 peer 172.30.0.1
+```
 
-Don't forget to put in your user name and group so dsptunnel can access the
-tunnel device without running as root (which would be a bad thing).
 Feel free to replace the IPs with addresses of your choice (yay, FREEDOM).
 
 Now simply run dsptunnel. If you don't have OSS run it using an OSS wrapper
 like aoss or padsp. Now ping the other machine. Now set up routing and
 enjoy your new slow Internet. And you can even listen to the bits.
 
+## Missing /dev/dsp
+
 Debian: sudo apt install osspd
+
+## Configuration
 
 If you have a really good sound card that supports 96khz sample rate you can
 start dsptunnel with "-s 96000" to make use of it.
 If you get trasmission errors you can increase the bit length using the -b
 option. -t sets the name of the TUN device. -d sets the name of the dsp device.
 
-This software is licensed under the GNU GPL V3. See LICENSE for details.
-Send bugreports and questions to someone@d00m.org.
+## License
 
+This software is licensed under the GNU GPL V3. See LICENSE for details.
