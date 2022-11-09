@@ -42,13 +42,12 @@ static int audioBufPos = AUDIO_BUF_SIZE;
 
 struct threadopts opts;
 
-short int sample = 0;
+short signed int sample = 0;
 short unsigned int sampleCount = 0;
 short unsigned int silenceCount = 0;
-int sampleCumSum = 0;
-short signed int bitPos = 7;
-short unsigned int currentByte = 0;
-// short unsigned int silenceExpected = 0;
+signed int sampleCumSum = 0;
+signed char bitPos = 7;
+unsigned char currentByte = 0;
 
 static int audio_in() {
 	if (audioBufPos >= AUDIO_BUF_SIZE) {
@@ -72,7 +71,6 @@ void save_byte() {
 	dataBuf[dataBufPos++] = currentByte;
 	bitPos = 7;
 	currentByte = 0;
-	// silenceExpected = 1;
 }
 
 void save_bit() {
@@ -112,11 +110,8 @@ short int receive_silence() {
 		unsigned short expectedChecksum = fletcher16(dataBuf, length);
 		unsigned short receivedChecksum = (dataBuf[length] << 8) | dataBuf[length + 1];
 
-		// fprintf(stderr, "> %i bytes, checksum: 0x%04hX (0x%04hX)\n", dataBufPos, receivedChecksum, expectedChecksum);
-
 		if (expectedChecksum != receivedChecksum) {
 			fprintf(stderr, "> %i bytes, incorrect checksum 0x%04hX / 0x%04hX", dataBufPos, receivedChecksum, expectedChecksum);
-			// fputs("input_loop: incorrect checksum\n", stderr);
 		} else if (write(opts.tundev, dataBuf, length) != length) {
 			perror("input_loop: write");
 			return 0;
@@ -138,11 +133,7 @@ void receive_bit() {
 		#endif
 		bitPos = 7;
 		currentByte = 0;
-		// sampleCount = 0;
 		silenceCount = 0;
-		// silenceExpected = 0;
-		// sampleCumSum = 0;
-		// sampleCumSum = sample;
 
 		#ifdef CONSIDER_FIRST_SAMPLE
 			#ifdef DEBUG
@@ -159,10 +150,6 @@ void receive_bit() {
 			dataBufPos = 0;
 			fprintf(stderr, "reset buffer, previous not correctly received\n");
 		}
-	// } else if (silenceExpected) {
-	// 	#ifdef DEBUG
-	// 	fprintf(stderr, " I%i", sample > THRESHOLD ? 1 : 0);
-	// 	#endif
 	} else {
 		#ifdef DEBUG
 		fprintf(stderr, "%i", sample > THRESHOLD ? 1 : 0);
