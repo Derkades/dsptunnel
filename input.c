@@ -26,9 +26,11 @@
 #include "input.h"
 
 #define DEBUG
+// #define DEBUG_VERBOSE
 
 #define EOT_SILENCE 5
-#define THRESHOLD 1000
+#define THRESHOLD 2000
+#define CONSIDER_FIRST_SAMPLE
 
 #define DATA_BUF_SIZE 2048
 static unsigned char dataBuf[DATA_BUF_SIZE];
@@ -44,9 +46,9 @@ short int sample = 0;
 short unsigned int sampleCount = 0;
 short unsigned int silenceCount = 0;
 int sampleCumSum = 0;
-short unsigned int bitPos = 7;
+short signed int bitPos = 7;
 short unsigned int currentByte = 0;
-short unsigned int silenceExpected = 0;
+// short unsigned int silenceExpected = 0;
 
 static int audio_in() {
 	if (audioBufPos >= AUDIO_BUF_SIZE) {
@@ -65,12 +67,12 @@ static int audio_in() {
 
 void save_byte() {
 	#ifdef DEBUG
-	fprintf(stderr, "B%i '%c'\n", currentByte, currentByte);
+	fprintf(stderr, "0x%x '%c'\n", currentByte, currentByte);
 	#endif
 	dataBuf[dataBufPos++] = currentByte;
 	bitPos = 7;
 	currentByte = 0;
-	silenceExpected = 1;
+	// silenceExpected = 1;
 }
 
 void save_bit() {
@@ -78,23 +80,18 @@ void save_bit() {
 	if (sampleMean > THRESHOLD) {
 		currentByte |= 1 << bitPos;
 	}
-	#ifdef DEBUG
+	#ifdef DEBUG_VERBOSE
 	fprintf(stderr, " #%i", sampleCount);
-	if (sampleMean > THRESHOLD) {
+	if (sampleMean > 0) {
 		fprintf(stderr, " ~%i > 1\n", sampleMean);
-	} else if (sampleMean < -THRESHOLD) {
-		fprintf(stderr, " ~%i > 0\n", sampleMean);
 	} else {
-		fprintf(stderr, " ~%i > ?\n", sampleMean);
+		fprintf(stderr, " ~%i > 0\n", sampleMean);
 	}
+	#else
+	fprintf(stderr, " ");
 	#endif
 	sampleCumSum = 0;
 	sampleCount = 0;
-	// if (bitPos == 0) {
-	// 	save_byte();
-	// } else {
-	// 	bitPos--;
-	// }
 }
 
 short int receive_silence() {
@@ -105,6 +102,12 @@ short int receive_silence() {
 	}
 
 	if (silenceCount > (opts.bitlength * EOT_SILENCE) && dataBufPos >= 3) {
+		if (bitPos == 0) {
+			// Last bit of final byte was missing
+			save_bit();
+			save_byte();
+		}
+
 		unsigned short length = dataBufPos - 2;
 		unsigned short expectedChecksum = fletcher16(dataBuf, length);
 		unsigned short receivedChecksum = (dataBuf[length] << 8) | dataBuf[length + 1];
@@ -122,34 +125,44 @@ short int receive_silence() {
 		}
 		dataBufPos = 0;
 	}
+
 	return 1;
 }
 
 void receive_bit() {
 	if (silenceCount > opts.bitlength) {
-		// Was silent for a while, this must be a sync signal
+		// Was silent for a while, this is the start of a new transmission
+		// First sample is ignored
 		#ifdef DEBUG
-		fprintf(stderr, "\n|S%i|\n", silenceCount);
+		fprintf(stderr, "\n|S%u|\n", silenceCount);
 		#endif
-		// if (bitPos != 7) {
-		// 	// Save last bit of previous byte, and then store the entire byte in buffer
-		// 	fprintf(stderr, "spb");
-
-		// 	save_byte();
-		// }
 		bitPos = 7;
 		currentByte = 0;
-		sampleCount = 1;
+		// sampleCount = 0;
 		silenceCount = 0;
-		silenceExpected = 0;
-		sampleCumSum = sample;
-		#ifdef DEBUG
-		fprintf(stderr, "%i", sample > THRESHOLD ? 1 : 0);
+		// silenceExpected = 0;
+		// sampleCumSum = 0;
+		// sampleCumSum = sample;
+
+		#ifdef CONSIDER_FIRST_SAMPLE
+			#ifdef DEBUG
+			fprintf(stderr, "%i", sample > THRESHOLD ? 1 : 0);
+			#endif
+			sampleCount = 1;
+			sampleCumSum = sample;
+		#else
+			sampleCount = 0;
+			sampleCumSum = 0;
 		#endif
-	} else if (silenceExpected) {
-		#ifdef DEBUG
-		fprintf(stderr, " I%i", sample > THRESHOLD ? 1 : 0);
-		#endif
+
+		if (dataBufPos > 0) {
+			dataBufPos = 0;
+			fprintf(stderr, "reset buffer, previous not correctly received\n");
+		}
+	// } else if (silenceExpected) {
+	// 	#ifdef DEBUG
+	// 	fprintf(stderr, " I%i", sample > THRESHOLD ? 1 : 0);
+	// 	#endif
 	} else {
 		#ifdef DEBUG
 		fprintf(stderr, "%i", sample > THRESHOLD ? 1 : 0);
@@ -159,7 +172,6 @@ void receive_bit() {
 			silenceCount--;
 		}
 		sampleCount++;
-		// Don't save if last bit, it is saved when next byte arrives
 		if (sampleCount >= opts.bitlength) {
 			save_bit();
 			if (bitPos > 0) {

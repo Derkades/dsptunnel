@@ -28,7 +28,10 @@
 #include "output.h"
 
 // #define DEBUG_PRINT
-#define DEBUG_HELLO "hello this is an even longer message lorem impsum dolor sit amet"
+// #define DEBUG_HELLO "hello this is an even longer message lorem ipsum"
+// #define DEBUG_HELLO "hello abcdefghijklmnopqrstuvwxyz"
+// #define DEBUG_HELLO "abcdefghijklmnopqrstuvwxyz"
+#define DEBUG_HELLO "hello"
 
 // #define SILENCE_SAMPLE SHRT_MAX / 16
 #define EOT_SILENCE 8
@@ -36,7 +39,7 @@
 #define DATA_BUF_SIZE 2048
 static unsigned char dataBuf[DATA_BUF_SIZE];
 
-#define AUDIO_BUF_SIZE 2048
+#define AUDIO_BUF_SIZE 4096
 static short int audioBuf[AUDIO_BUF_SIZE];
 static int audioBufPos = 0;
 
@@ -101,9 +104,11 @@ static short int write_byte(struct threadopts opts, unsigned char byte) {
 		}
 	}
 	// End every byte with silence to sync
-	if (!write_sample_bl_repeat(opts, 0, 2)) {
-		return 0;
-	}
+	// if (!write_sample_bl_repeat(opts, 0, 2)) {
+	// 	return 0;
+	// }
+	// write_sample_bl(opts, SHRT_MIN);
+	// write_sample_bl(opts, SHRT_MAX);
 	return 1;
 }
 
@@ -176,7 +181,7 @@ void *output_loop(void *inopts) {
 
 		#ifdef DEBUG_HELLO
 		// Flush audio buffer
-		for (int i = audioBufPos; i <= AUDIO_BUF_SIZE; i++) {
+		while (audioBufPos != 1) {
 			write_sample(opts, 0);
 		}
 		#endif
