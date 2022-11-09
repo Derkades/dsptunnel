@@ -1,4 +1,6 @@
-dsptunnel v.1.0 by 50m30n3 2011
+Original dsptunnel by 50m30n3 2011
+
+Forked version to use mono audio instead of stereo. This fork also better tolerates unstable connections.
 
 Ever wanted to relive the carefree days of slow-as-fuck Internet?
 Miss the days of aborted downloads and half loaded porn images?
