@@ -29,10 +29,10 @@
 #include "output.h"
 
 // #define DEBUG_PRINT
-#define DEBUG_BYTES 512
+// #define DEBUG_BYTES 512
 #define DEBUG_SLEEP 1
 
-#define EOT_SILENCE 8
+#define EOT_SILENCE 16
 
 #define DATA_BUF_SIZE 2048
 static unsigned char dataBuf[DATA_BUF_SIZE];
@@ -40,6 +40,21 @@ static unsigned char dataBuf[DATA_BUF_SIZE];
 #define AUDIO_BUF_SIZE 4096
 static short int audioBuf[AUDIO_BUF_SIZE];
 static int audioBufPos = 0;
+
+static short int flush_buffer(struct threadopts opts) {
+	for (int i = audioBufPos; i < AUDIO_BUF_SIZE; i++) {
+		audioBuf[i] = 0;
+	}
+
+	ssize_t written = write(opts.dspdev, audioBuf, sizeof(short int) * AUDIO_BUF_SIZE);
+	if (written != (sizeof(short int) * AUDIO_BUF_SIZE)) {
+		perror("audio_out: length mismatch");
+		return 0;
+	}
+
+	audioBufPos = 0;
+	return 1;
+}
 
 static short int write_sample(struct threadopts opts, short int sample) {
 	#ifdef DEBUG_PRINT
@@ -53,12 +68,9 @@ static short int write_sample(struct threadopts opts, short int sample) {
 	#endif
 
 	if (audioBufPos >= AUDIO_BUF_SIZE) {
-		ssize_t written = write(opts.dspdev, audioBuf, sizeof(short int) * AUDIO_BUF_SIZE);
-		if (written != (sizeof(short int) * AUDIO_BUF_SIZE)) {
-			perror("audio_out: length mismatch");
+		if (!flush_buffer(opts)) {
 			return 0;
 		}
-		audioBufPos = 0;
 	}
 
 	audioBuf[audioBufPos++] = sample;
@@ -108,7 +120,19 @@ void *output_loop(void *inopts) {
 	pollfd.fd = opts.tundev;
 	pollfd.events = POLLIN;
 
+	while (poll(&pollfd, 1, 0)) {
+		ssize_t size = read(opts.tundev, dataBuf, DATA_BUF_SIZE);
+		if (size == -1) {
+			perror("output_loop: read" );
+			return NULL;
+		}
+		fprintf(stderr, "(ignoring %li bytes)\n", size);
+	}
+
 	while (!*(opts.done) ) {
+		// fputs("receive\n", stderr);
+		usleep(500000);
+		// sleep(1);
 		#ifdef DEBUG_BYTES
 		sleep(DEBUG_SLEEP);
 		ssize_t size = DEBUG_BYTES;
@@ -132,8 +156,8 @@ void *output_loop(void *inopts) {
 
 		// Read from tun device into data buffer
 
-		// Last 2 bits are used to store a checksum later
-		ssize_t size = read(opts.tundev, dataBuf, DATA_BUF_SIZE - 2);
+		// Last 3 bits are used to store checksum and parity
+		ssize_t size = read(opts.tundev, dataBuf, DATA_BUF_SIZE - 3);
 		if (size == -1) {
 			perror("output_loop: read" );
 			return NULL;
@@ -163,12 +187,14 @@ void *output_loop(void *inopts) {
 			return NULL;
 		}
 
-		#ifdef DEBUG_BYTES
-		// Flush audio buffer
-		while (audioBufPos != 1) {
-			write_sample(opts, 0);
-		}
-		#endif
+		flush_buffer(opts);
+
+		// #ifdef DEBUG_BYTES
+		// // Flush audio buffer
+		// while (audioBufPos != 1) {
+		// 	write_sample(opts, 0);
+		// }
+		// #endif
 	}
 
 	return NULL;

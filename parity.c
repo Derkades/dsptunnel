@@ -8,7 +8,7 @@
 size_t add_parity(unsigned char *buf, size_t len) {
     // Add two checksum bytes
     unsigned short int checksum = fletcher16(buf, len);
-    buf[len++] = (checksum>>8) & 0xff;
+    buf[len++] = checksum >> 8;
     buf[len++] = checksum & 0xff;
 
     // Add parity byte, XOR of all previous bytes

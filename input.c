@@ -28,7 +28,9 @@
 
 // #define DEBUG
 // #define DEBUG_VERBOSE
-#define PRINT_BUFFER
+// #define PRINT_BUFFER_STRING
+#define PRINT_BUFFER_HEX
+// #define WRITE_BUFFER_TUN
 
 #define EOT_SILENCE 5
 #define THRESHOLD 1500
@@ -38,7 +40,7 @@
 static unsigned char dataBuf[DATA_BUF_SIZE];
 static int dataBufPos = 0;
 
-#define AUDIO_BUF_SIZE 2048
+#define AUDIO_BUF_SIZE 512
 static short int audioBuf[AUDIO_BUF_SIZE];
 static int audioBufPos = AUDIO_BUF_SIZE;
 
@@ -127,10 +129,8 @@ short int receive_silence() {
 				} else {
 					fprintf(stderr, "> %i bytes, parity repair %lu, level %.0f\n", dataBufPos, fixed, levelMean);
 				}
-				#ifdef PRINT_BUFFER
-				dataBuf[dataBufPos - 3] = '\0';
-				fputs(dataBuf, stderr);
-				#else
+
+				#ifdef WRITE_BUFFER_TUN
 				if (write(opts.tundev, dataBuf, dataBufPos - 3) != dataBufPos - 3) {
 					perror("input_loop: write");
 					return 0;
@@ -140,6 +140,19 @@ short int receive_silence() {
 				unsigned short int checksum = fletcher16(dataBuf, dataBufPos - 3);
 				fprintf(stderr, "> %i bytes, invalid checksum 0x%04hX, level %0.f\n", dataBufPos, checksum, levelMean);
 			}
+
+			#ifdef PRINT_BUFFER_HEX
+			for (int i = 0; i < dataBufPos; i++) {
+				fprintf(stderr, "%x ", dataBuf[i]);
+			}
+			fputs("\n", stderr);
+			#endif
+
+			#ifdef PRINT_BUFFER_STRING
+			dataBuf[dataBufPos - 3] = '\0';
+			fputs(dataBuf, stderr);
+			fputs("\n", stderr);
+			#endif
 		}
 		dataBufPos = 0;
 	}
