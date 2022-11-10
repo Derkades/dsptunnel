@@ -23,7 +23,8 @@
 #include <string.h>
 
 #include "dsptunnel.h"
-#include "fletcher.h"
+// #include "fletcher.h"
+#include "parity.h"
 
 #include "output.h"
 
@@ -139,12 +140,9 @@ void *output_loop(void *inopts) {
 		}
 		#endif
 
-		// Calculate checksum, in 2 bytes at end of buffer
-		unsigned short int checksum = fletcher16(dataBuf, size);
+		size = add_parity(dataBuf, size);
 
-		dataBuf[size++] = (checksum>>8)&0xff;
-		dataBuf[size++] = checksum&0xff;
-
+		unsigned short int checksum = (dataBuf[size-3] << 8) | dataBuf[size-2];
 		fprintf(stderr, "< %li bytes, checksum: 0x%04hX\n", size, checksum);
 
 		// For all bytes in the output buffer

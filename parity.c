@@ -1,67 +1,55 @@
-#include <unistd.h>
-// #include <stdlib.h>
-#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
 
-#define BYTES 4
+#include "fletcher.h"
 
-unsigned char checksum(unsigned char *in) {
-    unsigned char sum = 0;
-    for (size_t i = 0; i < BYTES + 1; i++) {
-        sum += in[i];
+// Add parity and checksum to end of buffer
+// Returns new length
+size_t add_parity(unsigned char *buf, size_t len) {
+    // Add two checksum bytes
+    unsigned short int checksum = fletcher16(buf, len);
+    buf[len++] = (checksum>>8) & 0xff;
+    buf[len++] = checksum & 0xff;
+
+    // Add parity byte, XOR of all previous bytes
+    buf[len++] = 0;
+    for (size_t i = 0; i < len-1; i++) {
+        buf[len-1] ^= buf[i];
     }
-    return sum;
+
+    return len;
 }
 
-unsigned char parity(unsigned char *in, size_t skip) {
-    unsigned char parity = 0;
-    for (size_t i = 0; i < BYTES + 1; i++) {
-        if (i != skip) {
-            parity ^= in[i];
-        }
+// len is length of data buffer including parity and checksum
+// returns 1 if correct, otherwise 0
+int parity_check(unsigned char *buf, size_t len, size_t *fixed) {
+    // Parity byte is at [len-1], so checksum at [len-3] and [len-2]
+    if (fletcher16(buf, len - 3) == ((buf[len-3] << 8) | buf[len-2])) {
+        return 1;
     }
-    return parity;
-}
 
-void parity_encode(unsigned char *in, size_t in_size, unsigned char *out, size_t *out_size) {
-    // TODO set out size
-    for (size_t in_base = 0; in_base < in_size; in_base += BYTES) {
-        size_t out_base = (in_base / 2) * 3;
-        memcpy(out + out_base, in + in_base, BYTES);
-        out[out_base + BYTES] = parity(in + in_base, BYTES);
-        out[out_base + BYTES + 1] = checksum(in + in_base);
-    }
-}
+    for (size_t i = 0; i < len; i++) {
+        // Save original value
+        unsigned char original = buf[i];
 
-unsigned short int parity_decode(unsigned char *in, size_t in_size, unsigned char* out, size_t *out_size) {
-    for (size_t in_base = 0; in_base < in_size; in_base += BYTES + 2) {
-        size_t out_base = in_base / 3 * 2;
-        if (checksum(in + in_base) == out[out_base + BYTES + 1]) {
-            goto copy;
-        } else {
-            // Corruption, restore each bit from parity until checksum matches
-            for (size_t skip = 0; skip < BYTES; skip++) {
-                unsigned char orig = in[in_base + skip];
-                in[in_base + skip] = parity(in_base, skip);
-                if (checksum(in + in_base) == out[out_base + BYTES + 1]) {
-                    goto copy;
-                }
+        // Reconstruct byte using parity
+        // XOR of all other bytes
+        buf[i] = 0;
+        for (size_t j = 0; j < len; j++) {
+            if (i != j) {
+                buf[i] ^= buf[j];
             }
-            return 0;
         }
-        copy:
-        memcpy(out + out_base, in + in_base, BYTES);
+
+        // If checksum matches, this byte was corrupt and has been successfully repaired
+        if (fletcher16(buf, len - 3) == ((buf[len-3] << 8) | buf[len-2])) {
+            *fixed = i;
+            return 1;
+        }
+
+        // Restore original value otherwise
+        buf[i] = original;
     }
-    return 1;
-}
 
-void main() {
-    const char* str = "testtesttest";
-
-    char in[1024];
-    char out[1024];
-
-    size_t in_size = strlen(str);
-    size_t out_size;
-    memcpy(in, str, in_size);
-    parity_encode(in, in_size, out, &out_size);
+    return 0;
 }

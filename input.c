@@ -22,11 +22,13 @@
 
 #include "dsptunnel.h"
 #include "fletcher.h"
+#include "parity.h"
 
 #include "input.h"
 
 // #define DEBUG
 // #define DEBUG_VERBOSE
+#define PRINT_BUFFER
 
 #define EOT_SILENCE 5
 #define THRESHOLD 1500
@@ -106,27 +108,37 @@ short int receive_silence() {
 	}
 
 	if (silenceCount > (opts.bitlength * EOT_SILENCE)) {
-		if (dataBufPos > 3) {
+		if (dataBufPos > 4) {
 			if (bitPos == 0) {
 				// Last bit of final byte was missing
 				save_bit();
 				save_byte();
 			}
 
-			unsigned short length = dataBufPos - 2;
-			unsigned short expectedChecksum = fletcher16(dataBuf, length);
-			unsigned short receivedChecksum = (dataBuf[length] << 8) | dataBuf[length + 1];
 			float levelMean = levelSum / levelCount;
 			levelSum = 0;
 			levelCount = 0;
 
-			if (expectedChecksum != receivedChecksum) {
-				fprintf(stderr, "> %i bytes, incorrect checksum 0x%04hX / 0x%04hX level %.0f\n", dataBufPos, receivedChecksum, expectedChecksum, levelMean);
-			} else if (write(opts.tundev, dataBuf, length) != length) {
-				perror("input_loop: write");
-				return 0;
+			size_t fixed = (size_t) -1;
+
+			if (parity_check(dataBuf, dataBufPos, &fixed)) {
+				if (fixed == (size_t) -1) {
+					fprintf(stderr, "> %i bytes, valid, level %.0f\n", dataBufPos, levelMean);
+				} else {
+					fprintf(stderr, "> %i bytes, parity repair %lu, level %.0f\n", dataBufPos, fixed, levelMean);
+				}
+				#ifdef PRINT_BUFFER
+				dataBuf[dataBufPos - 3] = '\0';
+				fputs(dataBuf, stderr);
+				#else
+				if (write(opts.tundev, dataBuf, dataBufPos - 3) != dataBufPos - 3) {
+					perror("input_loop: write");
+					return 0;
+				}
+				#endif
 			} else {
-				fprintf(stderr, "> %i bytes, correct checksum 0x%04hX level %.0f\n", dataBufPos, receivedChecksum, levelMean);
+				unsigned short int checksum = fletcher16(dataBuf, dataBufPos - 3);
+				fprintf(stderr, "> %i bytes, invalid checksum 0x%04hX, level %0.f\n", dataBufPos, checksum, levelMean);
 			}
 		}
 		dataBufPos = 0;
